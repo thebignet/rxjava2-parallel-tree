@@ -1,19 +1,18 @@
 package fr.edf.distribution.health.check;
 
+import com.pacoworks.rxtuples2.RxTuples;
 import fr.edf.distribution.health.value.CompositeHealth;
 import fr.edf.distribution.health.value.Health;
 import io.reactivex.Flowable;
 import io.reactivex.Single;
 import io.reactivex.schedulers.Schedulers;
+import org.javatuples.Pair;
 
-import java.util.AbstractMap;
 import java.util.Collection;
 
 public class CompositeHealthCheck implements HealthCheck {
     private final String name;
     private final Collection<HealthCheck> checks;
-    private Flowable<String> healthName;
-    private Flowable<HealthCheck> healthCheck;
 
     public CompositeHealthCheck(String name, Collection<HealthCheck> checks) {
         this.name = name;
@@ -28,14 +27,17 @@ public class CompositeHealthCheck implements HealthCheck {
     @Override
     public Single<? extends Health> check() {
         Flowable<HealthCheck> healthCheck = Flowable.fromIterable(checks);
-        Flowable<? extends Health> healthValue = healthCheck
+
+        Flowable<String> healthNames = healthCheck.map(HealthCheck::name);
+
+        Flowable<? extends Health> healthValues = healthCheck
                 .parallel()
                 .runOn(Schedulers.io())
                 .flatMap(hc -> hc.check().toFlowable())
                 .sequential();
-        Flowable<String> healthName = healthCheck.map(HealthCheck::name);
-        return healthValue.zipWith(healthName, (h, n) -> new AbstractMap.SimpleEntry<>(n, h))
-                .toMap(AbstractMap.SimpleEntry::getKey, AbstractMap.SimpleEntry::getValue)
+
+        return healthNames.zipWith(healthValues, RxTuples.<String, Health>toPair())
+                .toMap(Pair::getValue0, Pair::getValue1)
                 .map(CompositeHealth::new);
     }
 
